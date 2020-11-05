@@ -1,0 +1,185 @@
+---
+title: "pm566 hw4"
+output: html_document
+---
+
+```{r}
+library(microbenchmark)
+library(parallel)
+library(matrixStats)
+```
+
+# Problem 1
+
+```{r}
+
+# Use the data with this code
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+# Total row sums
+fun1 <- function(mat) {
+  n <- nrow(mat)
+  ans <- double(n) 
+  for (i in 1:n) {
+    ans[i] <- sum(mat[i, ])
+  }
+  ans
+}
+
+#
+fun1alt <- function(mat) {
+ ans <- rowSums(mat)
+ ans
+}
+
+# Benchmarking
+microbenchmark::microbenchmark(
+  fun1(dat),
+  fun1alt(dat), unit = "relative", check = "equivalent"
+)
+
+```
+
+
+```{r}
+
+# Use the data with this code
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+# Cumulative sum by row
+fun2 <- function(mat) {
+  n <- nrow(mat)
+  k <- ncol(mat)
+  ans <- mat
+  for (i in 1:n) {
+    for (j in 2:k) {
+      ans[i,j] <- mat[i, j] + ans[i, j - 1]
+    }
+  }
+  ans
+}
+
+fun2alt <- function(mat) {
+  ans <- rowCumsums(mat)
+  ans 
+}
+
+# Test for the second
+microbenchmark::microbenchmark(
+  fun2(dat),
+  fun2alt(dat), unit = "relative", check = "equivalent"
+)
+```
+
+# Problem 2
+
+```{r}
+
+sim_pi <- function(n = 1000, i = NULL) {
+  p <- matrix(runif(n*2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# Here is an example of the run
+set.seed(156)
+sim_pi(1000) # 3.132
+
+# This runs the simulation a 4,000 times, each with 10,000 points
+set.seed(1231)
+system.time({
+  ans <- unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans))
+})
+```
+
+
+```{r}
+cl <- makePSOCKcluster(2L)
+clusterSetRNGStream(cl, 1231)
+#set.seed(1231)
+system.time({
+ ans <- unlist(
+   parLapply(cl= cl, 1:4000, sim_pi, n = 10000))
+  print(mean(ans))
+})
+```
+
+#SQL
+
+```{r}
+# install.packages(c("RSQLite", "DBI"))
+
+library(RSQLite)
+library(DBI)
+
+# Initialize a temporary in memory database
+con <- dbConnect(SQLite(), ":memory:")
+
+# Download tables
+film <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film.csv")
+film_category <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film_category.csv")
+category <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/category.csv")
+
+# Copy data.frames to database
+dbWriteTable(con, "film", film)
+dbWriteTable(con, "film_category", film_category)
+dbWriteTable(con, "category", category)
+```
+
+# Q1
+
+```{sql, connection=con}
+PRAGMA table_info(film)
+```
+```{sql, connection=con}
+PRAGMA table_info(film_category)
+```
+
+```{sql, connection=con}
+PRAGMA table_info(category)
+```
+
+```{sql, connection=con}
+SELECT COUNT (*) AS n,rating
+FROM film
+GROUP BY rating
+```
+
+# Q2
+
+```{sql, connection=con}
+SELECT rating,
+  AVG(replacement_cost) AS avg_replacement_cost, 
+  AVG(rental_rate) AS avg_rental_rate
+FROM film
+GROUP BY rating
+```
+
+# Q3
+
+```{sql, connection=con}
+SELECT fc.category_id, COUNT(*) AS n
+FROM film AS f
+  INNER JOIN film_category AS fc
+ON f.film_id = fc.film_id
+GROUP BY fc.category_id
+```
+
+# Q4
+
+```{sql, connection=con}
+SELECT fc.category_id, c.name, COUNT(*) AS n
+FROM film AS f
+  INNER JOIN (
+  film_category 
+   INNER JOIN category AS c
+ ON film_category.category_id = c.category_id) AS fc
+ON f.film_id = fc.film_id
+GROUP BY c.category_id
+ORDER BY n DESC
+```
+
+The name of the most popula category is Sports.
+
